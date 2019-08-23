@@ -1,0 +1,140 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "publisher_name": {
+            "defaultValue": "ASM DevOps",
+            "type": "String",
+            "metadata": {
+                "description": "The name of the dev publishing the API."
+            }
+        },
+        "publisher_email": {
+            "defaultValue": "asmdevops@savers.com",
+            "type": "String",
+            "metadata": {
+                "description": "The email of the dev publishing the API."
+            }
+        },
+        "environmentName": {
+            "type": "String",
+            "metadata": {
+                "description": "Name of the environment to create.  This will result in resources named like {environmentName}-ServiceName"
+            }
+        },
+        "appServicePlanName": {
+            "type": "String",
+            "metadata": {
+                "description": "Name of the App Service Plan for this service"
+            }
+        },
+        "serviceDisplayName": {
+            "type": "String",
+            "metadata": {
+                "description": "Product Delivery Service"
+            }
+        },
+        "appServiceName": {
+            "type": "String",
+            "metadata": {
+                "description": "Name of the Service to create. This will result in resources named like {environmentName}-serviceName"
+            }
+        },
+        "region": {
+            "defaultValue": "West US",
+            "type": "String",
+            "metadata": {
+                "description": "The location of the database server. For best performance, this location should be the same as the location of the web app."
+            }
+        },
+        "apmAccessKey": {
+            "type": "String",
+            "metadata": {
+                "description": "AccessKey required by AppDynamics"
+            }
+        },
+        "enableAPM": {
+            "defaultValue": "No",
+            "allowedValues": [
+                "No",
+                "Yes"
+            ],
+            "type": "String",
+            "metadata": {
+                "description": "Should the App Dynamics Extension be installed in the App Service?"
+            }
+        }
+    },
+    "variables": {
+        "spAccessServiceUrl": "[concat('https://', parameters('environmentName'), '-spaccessservice.azurewebsites.net/api/')]",
+        "fullServiceName": "[concat(parameters('environmentName'), '-', parameters('appServiceName'))]",
+        "fullAppServicePlanName": "[concat(parameters('environmentName'), '-', parameters('appServicePlanName'))]",
+        "siteName": "[concat(parameters('environmentName'),'-', parameters('appServiceName'))]",
+        "serverFarmRef": "[concat('/subscriptions/', subscription().subscriptionId,'/resourcegroups/', parameters('environmentName'), '-saversMMP/providers/Microsoft.Web/serverfarms/', variables('fullAppServicePlanName'))]",
+        "azureHttpsHeader": "[concat('https://',parameters('environmentName'))]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Web/serverfarms",
+            "apiVersion": "2014-06-01",
+            "name": "[variables('fullAppServicePlanName')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [],
+            "tags": {
+                "displayName": "[variables('fullAppServicePlanName')]"
+            },
+            "properties": {
+                "name": "[variables('fullAppServicePlanName')]",
+                "numberOfWorkers": 1
+            }
+        },
+        {
+            "type": "Microsoft.Web/sites",
+            "apiVersion": "2015-08-01",
+            "name": "[variables('fullServiceName')]",
+            "location": "[parameters('region')]",
+            "dependsOn": [
+                "[variables('serverFarmRef')]"
+            ],
+            "properties": {
+                "name": "[variables('fullServiceName')]",
+                "serverFarmId": "[variables('serverFarmRef')]",
+                "siteConfig": {
+                    "AlwaysOn": false
+                }
+            },
+            "resources": [
+                {
+                    "type": "config",
+                    "apiVersion": "2015-08-01",
+                    "name": "appsettings",
+                    "dependsOn": [
+                        "[concat('Microsoft.Web/sites/', variables('fullServiceName'))]"
+                    ],
+                  "properties": {
+                    "APPINSIGHTS_INSTRUMENTATIONKEY": "[reference(concat('Microsoft.Insights/components/', variables('fullAppServicePlanName'))).InstrumentationKey]",
+                    "appdynamics.controller.hostName": "[if(equals(parameters('enableAPM'), 'Yes'), 'Savers.saas.appdynamics.com', '')]",
+                    "appdynamics.controller.port": "[if(equals(parameters('enableAPM'), 'Yes'), '443', '')]",
+                    "appdynamics.controller.ssl.enabled": "[if(equals(parameters('enableAPM'), 'Yes'), 'True', '')]",
+                    "appdynamics.agent.accountName": "[if(equals(parameters('enableAPM'), 'Yes'), 'Savers', '')]",
+                    "appdynamics.agent.accountAccessKey": "[if(equals(parameters('enableAPM'), 'Yes'), parameters('apmAccessKey'), '')]",
+                    "appdynamics.agent.applicationName": "[variables('fullServiceName')]"
+                  }
+                }
+            ]
+        },
+        {
+            "type": "Microsoft.Insights/components",
+            "apiVersion": "2014-04-01",
+            "name": "[variables('fullAppServicePlanName')]",
+            "location": "eastus",
+            "dependsOn": [
+                "[concat('Microsoft.Web/sites/', variables('fullServiceName'))]",
+                "[variables('serverFarmRef')]"
+            ],
+            "properties": {
+                "ApplicationId": "[variables('fullServiceName')]"
+            }
+        }
+    ]
+}
